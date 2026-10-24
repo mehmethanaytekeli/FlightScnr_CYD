@@ -1,0 +1,15 @@
+FlightScnr_CYD — ESP32-2432S028 (2.8" Cheap Yellow Display) Adaptation
+Modeled after and derived from FlightScnr_Pi and FlightScnr by Yash Mulgaonkar:
+- https://github.com/yashmulgaonkar/FlightScnr_Pi
+- https://github.com/yashmulgaonkar/FlightScnr
+
+Original Copyright (c) 2026 Yash Mulgaonkar.
+Licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0).
+Commercial use is strictly prohibited without separate permission from Yash Mulgaonkar.
+
+Data & Asset Attributions:
+- Aircraft photos courtesy of planespotters.net contributors (https://www.planespotters.net/).
+- Weather and forecast data by Open-Meteo.com (https://open-meteo.com/, CC BY 4.0).
+- Aviation METAR data from NOAA / AviationWeather.gov.
+- Seismic data from USGS Earthquake Hazards Program.
+- Live ADS-B traffic from Flightradar24 / adsb.fi (https://adsb.fi/).

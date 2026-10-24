@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<!--
+  SPDX-License-Identifier: CC-BY-NC-SA-4.0
+  Copyright (c) 2026 Yash Mulgaonkar - https://github.com/yashmulgaonkar/FlightScnr_Pi
+  ESP32 CYD 2.8" (320x240) Live Interactive Simulator & Preview
+  Commercial use is strictly prohibited without separate permission from Yash Mulgaonkar.
+-->
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlightScnr CYD 2.8" (320x240) Canlı Simülatör</title>
+<style>
+  :root {
+    --bg: #070d09;
+    --panel: #111b15;
+    --cyd-pcb: #e5b81b;
+    --green: #30ff60;
+    --amber: #ffb428;
+    --cyan: #38a8ff;
+    --txt: #ebf4ee;
+    --muted: #8ea696;
+  }
+  * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; user-select: none; }
+  body {
+    margin: 0; background: radial-gradient(circle at 50% 20%, #122619, #050906 75%);
+    color: var(--txt); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 18px;
+  }
+  h1 { margin: 0 0 4px; font-size: 1.35rem; color: var(--green); letter-spacing: 0.5px; }
+  .sub { font-size: 0.84rem; color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .cyd-board {
+    background: linear-gradient(145deg, #f2c522, #c99c0e);
+    padding: 18px 26px; border-radius: 16px;
+    box-shadow: 0 20px 55px rgba(0,0,0,0.75), inset 0 2px 4px rgba(255,255,255,0.45);
+    position: relative; display: flex; flex-direction: column; align-items: center;
+    border: 2px solid #9e7806;
+  }
+  .cyd-silkscreen {
+    color: #2c2100; font-weight: 800; font-size: 0.72rem; letter-spacing: 1.2px;
+    margin-bottom: 6px; display: flex; justify-content: space-between; width: 100%;
+  }
+  .bezel {
+    background: #0b0b0b; padding: 12px; border-radius: 10px;
+    box-shadow: inset 0 0 12px #000, 0 4px 10px rgba(0,0,0,0.6);
+  }
+  canvas {
+    width: 640px; height: 480px; /* 2x crisp pixel scale of 320x240 */
+    image-rendering: pixelated; cursor: pointer; display: block; border-radius: 4px;
+    background: #020f03;
+  }
+  .controls {
+    margin-top: 14px; display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; max-width: 720px;
+  }
+  .btn {
+    background: #12261a; color: var(--txt); border: 1px solid #2b5e3c;
+    padding: 7px 13px; border-radius: 8px; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn:hover, .btn.active { background: #1f5c34; border-color: var(--green); color: #fff; }
+  .hint-bar {
+    margin-top: 10px; font-size: 0.78rem; color: var(--muted); text-align: center;
+  }
+</style>
+</head>
+<body>
+  <h1>FlightScnr_CYD — ESP32-2432S028 (2.8" 320×240) Canlı Simülatör</h1>
+  <div class="sub">Yash Mulgaonkar'ın <b>FlightScnr_Pi</b> projesinin ESP32 CYD 2.8" ekranına birebir uyarlanmış etkileşimli önizlemesi (Kayseri LTAU/ASR)</div>
+
+  <div class="cyd-board">
+    <div class="cyd-silkscreen">
+      <span>ESP32-2432S028R (CYD 2.8" TFT)</span>
+      <span id="liveFeedBadge">CANLI RADAR VERİSİ AKTİF</span>
+    </div>
+    <div class="bezel">
+      <canvas id="tft" width="320" height="240"></canvas>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" onclick="setScr(0)">0. Boot Disclaimer</button>
+    <button class="btn active" onclick="setScr(1)">1. Radar Home</button>
+    <button class="btn" onclick="setScr(2)">2. Flight Detail (Fotoğraflı)</button>
+    <button class="btn" onclick="setScr(3)">3. Tracked Route Map</button>
+    <button class="btn" onclick="setScr(5)">4. Split-Flap Panosu (ASR)</button>
+    <button class="btn" onclick="setScr(6)">5. Saat Yüzleri (5 Mod)</button>
+    <button class="btn" onclick="setScr(7)">6. 5-Gün Hava & METAR</button>
+    <button class="btn" onclick="setScr(8)">7. Ayarlar & Portal</button>
+    <button class="btn" onclick="toggleBezel()">Çerçeve: <span id="bzlTxt">320×240 Tam</span></button>
+    <button class="btn" onclick="cycleMap()">Harita: <span id="mapTxt">CARTO Dark</span></button>
+  </div>
+  <div class="hint-bar">
+    Ekrandaki uçakların üzerine tıklayabilir, sağa/sola kaydırabilir (swipe), üstteki buzlu HUD barından ses ve konum seçebilirsiniz.
+  </div>
+
+<script>
+const cv = document.getElementById('tft');
+const ctx = cv.getContext('2d');
+
+let screen = 1; // Start on Radar Home for instant preview (0 = Disclaimer)
+let selectedIdx = 0;
+let clockFace = 0;
+let mapStyle = 0;
+let hudStyle = 0;
+let roundBezel = false;
+let showPrecip = true;
+let colorByAlt = true;
+let flipMode = 0;
+let volOpen = false;
+let favOpen = false;
+let volCh = 0;
+let vols = [80, 70, 85, 75, 60];
+let sweepDeg = 0;
+
+// Live Kayseri aircraft snapshot (from real FR24 feed around 38.72, 35.48)
+const aircraft = [
+  { cs:'AFL2179', fn:'SU2179', hex:'152001', reg:'RA-73721', type:'A321', model:'Airbus A321-211', airline:'Aeroflot', orig:'AYT', origCity:'Antalya', dest:'SVO', destCity:'Moscow', lat:38.82, lon:35.58, alt:33000, spd:484, hdg:44, vs:0, dist:14.2, cat:0 },
+  { cs:'THY2014', fn:'TK2014', hex:'4BAA68', reg:'TC-JRO',   type:'A321', model:'Airbus A321-231', airline:'Turkish Airlines', orig:'IST', origCity:'Istanbul', dest:'ASR', destCity:'Kayseri', lat:38.91, lon:35.18, alt:9400, spd:265, hdg:118, vs:-1100, dist:31.5, cat:0 },
+  { cs:'PGT2732', fn:'PC2732', hex:'4BB84A', reg:'TC-NCD',   type:'A20N', model:'Airbus A320neo',  airline:'Pegasus Airlines', orig:'SAW', origCity:'Istanbul SAW', dest:'ASR', destCity:'Kayseri', lat:38.64, lon:35.24, alt:6200, spd:220, hdg:72, vs:-850, dist:22.8, cat:0 },
+  { cs:'FDB3PR',  fn:'FZ1758', hex:'896531', reg:'A6-FMK',   type:'B38M', model:'Boeing 737 MAX 8',airline:'flydubai', orig:'SOF', origCity:'Sofia', dest:'DXB', destCity:'Dubai', lat:39.15, lon:34.95, alt:37000, spd:499, hdg:108, vs:0, dist:64.1, cat:0 },
+  { cs:'SXS9104', fn:'XQ9104', hex:'4BCE11', reg:'TC-SEZ',   type:'B738', model:'Boeing 737-800',  airline:'SunExpress', orig:'ADB', origCity:'Izmir', dest:'ASR', destCity:'Kayseri', lat:38.52, lon:35.02, alt:14500, spd:330, hdg:68, vs:950, dist:44.0, cat:0 },
+  { cs:'ANA204',  fn:'NH204',  hex:'86E79A', reg:'JA872A',   type:'B789', model:'Boeing 787-9',    airline:'All Nippon Airways', orig:'FRA', origCity:'Frankfurt', dest:'HND', destCity:'Tokyo HND', lat:39.32, lon:35.92, alt:35000, spd:537, hdg:98, vs:0, dist:76.4, cat:1 },
+  { cs:'HVK41',   fn:'TUAF41', hex:'4B8201', reg:'16-0041',  type:'A400', model:'Airbus A400M Atlas',airline:'Turkish Air Force', orig:'ASR', origCity:'Kayseri', dest:'ESB', destCity:'Ankara', lat:38.79, lon:35.42, alt:11200, spd:290, hdg:310, vs:1400, dist:9.8, cat:3, mil:true }
+];
+
+const mapStyles = [
+  { name:'CARTO Dark', land:'#0e1218', water:'#163452', road:'#1c2630' },
+  { name:'Voyager',    land:'#183a48', water:'#307dbc', road:'#2a586c' },
+  { name:'FAA VFR',    land:'#202e22', water:'#1c4873', road:'#8c2d5f' },
+  { name:'OSM Dark',   land:'#121614', water:'#142d42', road:'#28342e' },
+  { name:'Dark Flat',  land:'#020f03', water:'#020f03', road:'#0a1a0e' },
+  { name:'Seamap',     land:'#141c18', water:'#125276', road:'#0a2a4a' }
+];
+
+function setScr(s) {
+  screen = s;
+  document.querySelectorAll('.controls .btn').forEach((b, i) => {
+    if (i < 8) b.classList.toggle('active', [0,1,2,3,5,6,7,8][i] === s);
+  });
+}
+function toggleBezel() {
+  roundBezel = !roundBezel;
+  document.getElementById('bzlTxt').textContent = roundBezel ? '240×240 Yuvarlak' : '320×240 Tam';
+}
+function cycleMap() {
+  mapStyle = (mapStyle + 1) % mapStyles.length;
+  document.getElementById('mapTxt').textContent = mapStyles[mapStyle].name;
+}
+
+function altColor(ft, mil) {
+  if (mil) return '#ff2828';
+  if (!colorByAlt) return '#ffb428';
+  if (ft <= 4000) return '#ffb920';
+  if (ft <= 10000) return '#41e15f';
+  if (ft <= 22000) return '#23d7cd';
+  if (ft <= 32000) return '#379bff';
+  return '#e14beb';
+}
+
+function roundRect(x, y, w, h, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+}
+
+function drawPlaneIcon(x, y, hdg, col, isTracked, isMil) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (isTracked || isMil) {
+    ctx.beginPath();
+    ctx.arc(0, 0, ((Date.now() / 400 | 0) % 2) ? 9 : 7, 0, Math.PI * 2);
+    ctx.strokeStyle = isMil ? '#ff2828' : '#38a8ff';
+    ctx.stroke();
+  }
+  ctx.rotate((hdg * Math.PI) / 180);
+  ctx.fillStyle = col;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 1.6;
+  // Fuselage
+  ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(0, 6); ctx.stroke();
+  // Swept wings
+  ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(-7, 2); ctx.lineTo(0, 1); ctx.lineTo(7, 2); ctx.closePath(); ctx.fill();
+  // Tail
+  ctx.beginPath(); ctx.moveTo(-3.5, 5.5); ctx.lineTo(3.5, 5.5); ctx.stroke();
+  ctx.restore();
+}
+
+function renderDisclaimer() {
+  ctx.fillStyle = '#020f03'; ctx.fillRect(0, 0, 320, 240);
+  roundRect(14, 10, 292, 220, 12, '#0e1612', '#285a37');
+  ctx.fillStyle = '#ffb428';
+  ctx.beginPath(); ctx.moveTo(160, 18); ctx.lineTo(146, 40); ctx.lineTo(174, 40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#020f03'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('!', 160, 37);
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('KRITIK GUVENLIK ICIN KULLANILAMAZ', 160, 56);
+  ctx.fillStyle = '#d2dce4'; ctx.font = '10px sans-serif';
+  ctx.fillText('FlightScnr navigasyon veya ucus guvenligi kararlarinda', 160, 78);
+  ctx.fillText('kullanilamaz. Ucuncu taraf API verilerine dayanir.', 160, 94);
+  ctx.fillText('Sadece havacilik meraklilari ve hobi amaclidir.', 160, 110);
+  ctx.fillStyle = '#788ca0';
+  ctx.fillText('- Yash Mulgaonkar (CC BY-NC-SA 4.0)', 160, 130);
+  roundRect(90, 174, 140, 34, 17, '#249646', '#46d26e');
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('KABUL ET (8s)', 160, 195);
+}
+
+function renderRadar() {
+  const cx = 160, cy = 120, R = 114;
+  const ms = mapStyles[mapStyle];
+  ctx.fillStyle = roundBezel ? '#000' : ms.land;
+  ctx.fillRect(0, 0, 320, 240);
+
+  ctx.save();
+  if (roundBezel) {
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
+    ctx.fillStyle = ms.land; ctx.fillRect(0, 0, 320, 240);
+  }
+
+  // Stylized water & roads around Kayseri (Yamula Barajı / Kızılırmak & D300)
+  if (mapStyle !== 4) {
+    ctx.fillStyle = ms.water;
+    ctx.beginPath(); ctx.arc(cx - 26, cy - 24, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx - 12, cy - 28, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = ms.road; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(cx - 95, cy + 25); ctx.lineTo(cx + 95, cy - 20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 40, cy - 90); ctx.lineTo(cx + 35, cy + 95); ctx.stroke();
+  }
+
+  // Precipitation cells
+  if (showPrecip) {
+    const cells = [[2,-2,'rgba(30,120,235,0.42)'],[3,-2,'rgba(40,200,95,0.45)'],[3,-1,'rgba(235,195,30,0.45)'],[2,-1,'rgba(30,120,235,0.42)'],[4,-1,'rgba(40,200,95,0.42)']];
+    cells.forEach(([gx, gy, col]) => {
+      ctx.fillStyle = col;
+      ctx.fillRect(cx + gx * 18, cy + gy * 18, 17, 17);
+    });
+  }
+
+  // Airport runways (LTAU Kayseri & LTAZ Kapadokya)
+  ctx.strokeStyle = '#e18000'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx - 5, cy - 2); ctx.lineTo(cx + 7, cy - 6); ctx.stroke();
+  ctx.fillStyle = '#7896af'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('ASR', cx + 9, cy - 3);
+  ctx.fillText('NAV', cx - 52, cy - 6);
+
+  // Range rings & crosshairs
+  ctx.strokeStyle = '#106420'; ctx.lineWidth = 1;
+  [R/3, (R*2)/3, R].forEach((r, idx) => {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = idx === 2 ? '#249b3a' : '#106420';
+    ctx.stroke();
+  });
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Compass & scale labels
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('N', cx, cy - R + 10); ctx.fillText('S', cx, cy + R - 4);
+  ctx.fillText('E', cx + R - 7, cy + 3); ctx.fillText('W', cx - R + 7, cy + 3);
+  ctx.fillStyle = '#249b3a'; ctx.font = '8px sans-serif';
+  ctx.fillText('45km', cx - 28, cy + 18); ctx.fillText('90km', cx - 58, cy + 34); ctx.fillText('140km', cx - 86, cy + 50);
+
+  // Sweeping radar cone
+  const rad = (sweepDeg - 90) * Math.PI / 180;
+  for (let s = 26; s >= 1; s -= 2) {
+    const sr = (sweepDeg - s - 90) * Math.PI / 180;
+    ctx.strokeStyle = `rgba(48,255,96,${(28 - s) / 95})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(sr) * R, cy + Math.sin(sr) * R); ctx.stroke();
+  }
+  ctx.strokeStyle = '#30ff60'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(rad) * R, cy + Math.sin(rad) * R); ctx.stroke();
+
+  // Aircraft blips & tags
+  aircraft.forEach((a, i) => {
+    const ax = cx + (a.lon - 35.48) * 115;
+    const ay = cy - (a.lat - 38.72) * 135;
+    a._sx = ax; a._sy = ay;
+    const col = altColor(a.alt, a.mil);
+    drawPlaneIcon(ax, ay, a.hdg, col, i === selectedIdx, a.mil);
+
+    const tx = ax > cx + 30 ? ax - 48 : ax + 9;
+    const ty = ay - 4;
+    ctx.strokeStyle = '#249b3a'; ctx.lineWidth = 0.7;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.fillStyle = '#00ff00'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(a.cs, tx, ty);
+    ctx.fillStyle = a.vs > 200 ? '#00ffff' : (a.vs < -200 ? '#ff00ff' : '#ffc800');
+    ctx.fillText(`${a.type} ${(a.alt/100)|0}`, tx, ty + 8);
+  });
+  ctx.restore();
+
+  // Frosted Top Clock HUD Pill
+  roundRect(58, 5, 204, 24, 12, 'rgba(18,26,22,0.82)', '#249b3a');
+  ctx.fillStyle = '#ffd020'; ctx.beginPath(); ctx.arc(72, 17, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('23°C 4kt', 82, 21);
+  const now = new Date();
+  ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(now.toTimeString().slice(0,5), 162, 21);
+  roundRect(202, 8, 24, 18, 5, '#285a37');
+  ctx.font = '9px sans-serif'; ctx.fillText('VOL', 214, 20);
+  roundRect(230, 8, 26, 18, 5, '#285a37');
+  ctx.fillStyle = '#30ff60'; ctx.fillText('ASR', 243, 20);
+
+  // Side Cockpit Buttons when 320x240 Widescreen
+  if (!roundBezel) {
+    [['+',3,8],['-',3,42],['MAP',3,168],['FLAP',3,202],['7 AC',277,8],['CLCK',277,134],['METAR',277,168],['SET',277,202]].forEach(([lbl,x,y]) => {
+      roundRect(x, y, 40, 28, 6, 'rgba(14,22,18,0.88)', '#285a37');
+      ctx.fillStyle = '#30ff60'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(lbl, x + 20, y + 17);
+    });
+  }
+}
+
+function renderFlightDetail() {
+  const f = aircraft[selectedIdx % aircraft.length];
+  ctx.fillStyle = '#020f03'; ctx.fillRect(0, 0, 320, 240);
+  ctx.strokeStyle = '#30ff60'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(160, 120, 117, -1.3, 3.8); ctx.stroke();
+
+  ctx.fillStyle = '#64dcff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`Radar > Flight > ${f.cs}`, 160, 18);
+
+  // Pagination dots
+  for (let i = 0; i < aircraft.length; i++) {
+    ctx.fillStyle = i === selectedIdx ? '#30ff60' : '#082a0e';
+    ctx.beginPath(); ctx.arc(136 + i * 8, 27, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Aircraft Photo Card (Matches user's Image #4!)
+  roundRect(96, 33, 128, 76, 6, '#146ee2', '#38a8ff');
+  // Detailed painted airliner silhouette inside photo box
+  ctx.fillStyle = '#0a3791';
+  ctx.beginPath(); ctx.moveTo(188, 75); ctx.lineTo(204, 48); ctx.lineTo(208, 75); ctx.closePath(); ctx.fill();
+  roundRect(112, 68, 92, 15, 7, '#ffffff');
+  ctx.fillStyle = '#142846'; ctx.fillRect(114, 71, 7, 3);
+  ctx.fillStyle = '#dce6f2';
+  ctx.beginPath(); ctx.moveTo(144, 78); ctx.lineTo(170, 78); ctx.lineTo(160, 92); ctx.closePath(); ctx.fill();
+  roundRect(146, 83, 15, 6, 2, '#1e50af');
+  ctx.fillStyle = '#0a2d6e'; ctx.font = 'bold 8px sans-serif';
+  ctx.fillText(f.airline.toUpperCase().slice(0,14), 156, 78);
+  ctx.fillStyle = '#e0eefc'; ctx.font = '7px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('© Planespotters.net API', 101, 105);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`${f.cs} (${f.fn})`, 160, 124);
+  ctx.fillStyle = '#b4c8dc'; ctx.font = '11px sans-serif';
+  ctx.fillText(f.airline, 160, 139);
+  ctx.fillStyle = '#64dcff'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`${f.orig}, ${f.origCity} > ${f.dest}, ${f.destCity}`, 160, 155);
+  ctx.fillStyle = '#b4c8dc'; ctx.font = '10px sans-serif';
+  ctx.fillText(`${f.model} (${f.reg}) • ${f.dist} km`, 160, 171);
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`${f.alt.toLocaleString()}ft • ${f.spd} kts • HDG ${f.hdg}°`, 160, 187);
+
+  // Footer buttons
+  roundRect(34, 198, 66, 24, 12, '#e4ecf2');
+  ctx.fillStyle = '#0f172a'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('← PREV', 67, 214);
+  roundRect(106, 198, 72, 24, 12, '#0e1612', '#30ff60');
+  ctx.fillStyle = '#30ff60'; ctx.fillText('FOLLOW', 142, 214);
+  roundRect(184, 198, 66, 24, 12, '#e4ecf2');
+  ctx.fillStyle = '#0f172a'; ctx.fillText('NEXT →', 217, 214);
+  ctx.fillStyle = '#38a8ff'; ctx.beginPath(); ctx.arc(270, 210, 12, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(270, 210, 7, 0, Math.PI * 2); ctx.stroke();
+}
+
+function renderTracked() {
+  const f = aircraft[selectedIdx % aircraft.length];
+  ctx.fillStyle = '#020f03'; ctx.fillRect(0, 0, 320, 240);
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`Takip Edilen Ucus: ${f.cs}`, 160, 18);
+
+  roundRect(30, 28, 260, 114, 8, '#0e1218', '#285a37');
+  ctx.strokeStyle = '#64dcff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(64, 112); ctx.quadraticCurveTo(160, 48, 256, 64); ctx.stroke();
+  ctx.fillStyle = '#30ff60'; ctx.beginPath(); ctx.arc(64, 112, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffb428'; ctx.beginPath(); ctx.arc(256, 64, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(`${f.orig} (${f.origCity})`, 74, 128);
+  ctx.fillText(`${f.dest} (${f.destCity})`, 240, 82);
+  drawPlaneIcon(160, 72, 68, '#ffb428', true, false);
+
+  ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif';
+  ctx.fillText(`${f.airline} • ${f.model} (${f.reg})`, 160, 160);
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`ALT ${f.alt}ft • GS ${f.spd} kts • Kalan: 1,140 km`, 160, 178);
+
+  roundRect(85, 196, 74, 24, 12, '#0e1612', '#285a37');
+  ctx.fillStyle = '#fff'; ctx.fillText('DETAIL', 122, 212);
+  roundRect(168, 196, 74, 24, 12, '#38a8ff');
+  ctx.fillText('RADAR', 205, 212);
+}
+
+function renderFlipBoard() {
+  ctx.fillStyle = '#020f03'; ctx.fillRect(0, 0, 320, 240);
+  const drawTiles = (str, x, y, n, w, h, col) => {
+    for (let i = 0; i < n; i++) {
+      const tx = x + i * (w + 2);
+      roundRect(tx, y, w, h, 2, '#161a18', '#303834');
+      ctx.strokeStyle = '#060807'; ctx.beginPath(); ctx.moveTo(tx, y + h/2); ctx.lineTo(tx + w, y + h/2); ctx.stroke();
+      if (str[i]) {
+        ctx.fillStyle = col; ctx.font = `bold ${h > 20 ? 13 : 10}px monospace`; ctx.textAlign = 'center';
+        ctx.fillText(str[i], tx + w/2, y + h/2 + 4);
+      }
+    }
+  };
+  drawTiles('ASR', 44, 10, 3, 22, 26, '#ffb428');
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('KAYSERI ERKILET', 122, 21);
+  roundRect(122, 25, 140, 14, 4, '#183422');
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(['GELEN UCUSLAR','GIDEN UCUSLAR','BOLGEDEKI TRAFIK'][flipMode], 192, 35);
+
+  aircraft.slice(0, 6).forEach((a, r) => {
+    const ry = 46 + r * 24;
+    drawTiles(a.cs.padEnd(7,' '), 22, ry, 7, 13, 19, '#fff');
+    drawTiles(a.orig, 130, ry, 3, 13, 19, '#ffb428');
+    drawTiles(a.type, 178, ry, 4, 13, 19, '#64dcff');
+    drawTiles(`F${((a.alt/100)|0).toString().padStart(3,'0')}`, 240, ry, 4, 12, 19, '#30ff60');
+  });
+
+  roundRect(88, 196, 94, 24, 5, '#180808', '#781919');
+  ctx.fillStyle = '#ff3737'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(new Date().toTimeString().slice(0,8), 135, 212);
+  roundRect(192, 196, 68, 24, 12, '#38a8ff');
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('RADAR', 226, 212);
+}
+
+function renderClocks() {
+  ctx.fillStyle = '#020f03'; ctx.fillRect(0, 0, 320, 240);
+  const cx = 160, cy = 116, R = 104;
+  const now = new Date();
+  const faceNames = ['Digital + Weather', 'Classic Analog', 'Night Altimeter', 'Flieger Chronograph', 'Moon Phase'];
+
+  if (clockFace === 0) {
+    ctx.strokeStyle = '#249b3a'; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#30ff60'; ctx.font = 'bold 42px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(now.toTimeString().slice(0,5), cx, 78);
+    ctx.fillStyle = '#b4c8dc'; ctx.font = '11px sans-serif';
+    ctx.fillText('Cmt, 24 Eki • Kayseri (LTAU)', cx, 102);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('☀ 23.0°C • Az Bulutlu (Rüzgar 4 kt)', cx, 132);
+    ctx.fillStyle = '#ffb428'; ctx.font = '11px sans-serif';
+    ctx.fillText('Gün Doğumu 06:48   •   Gün Batımı 17:52', cx, 160);
+  } else {
+    ctx.fillStyle = clockFace === 2 ? '#041406' : '#1e1e1e';
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = clockFace === 2 ? '#30ff60' : '#777'; ctx.lineWidth = 2; ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      const a = (i * 30 - 90) * Math.PI / 180;
+      ctx.strokeStyle = clockFace === 2 ? '#30ff60' : '#fff';
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (R - 12), cy + Math.sin(a) * (R - 12));
+      ctx.lineTo(cx + Math.cos(a) * (R - 3),  cy + Math.sin(a) * (R - 3));
+      ctx.stroke();
+    }
+    const hrA = ((now.getHours() % 12 + now.getMinutes() / 60) * 30 - 90) * Math.PI / 180;
+    const mnA = (now.getMinutes() * 6 - 90) * Math.PI / 180;
+    const scA = (now.getSeconds() * 6 - 90) * Math.PI / 180;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(hrA) * 50, cy + Math.sin(hrA) * 50); ctx.stroke();
+    ctx.strokeStyle = '#30ff60'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(mnA) * 76, cy + Math.sin(mnA) * 76); ctx.stroke();
+    ctx.strokeStyle = '#e02020'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(scA) * 84, cy + Math.sin(scA) * 84); ctx.stroke();
+  }
+  roundRect(14, 206, 118, 24, 12, '#0e1612', '#285a37');
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`YÜZ: ${faceNames[clockFace].slice(0,12)} >`, 73, 222);
+  roundRect(236, 206, 68, 24, 12, '#38a8ff');
+  ctx.fillStyle = '#fff'; ctx.fillText('RADAR', 270, 222);
+}
+
+function renderForecastMetar() {
+  ctx.fillStyle = '#020f03'; ctx.fillRect(0, 0, 320, 240);
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('5 Günlük Hava Tahmini & Havalimanı METAR', 160, 16);
+
+  const days = [['Cmt','23/9'],['Paz','21/8'],['Pzt','18/6'],['Sal','19/7'],['Çar','22/9']];
+  days.forEach(([d, t], i) => {
+    const fx = 10 + i * 61;
+    roundRect(fx, 24, 57, 76, 6, '#0e1612', '#285a37');
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.fillText(d, fx + 28, 40);
+    ctx.fillStyle = i === 2 ? '#38a8ff' : '#ffd020';
+    ctx.beginPath(); ctx.arc(fx + 28, 62, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffb428'; ctx.font = 'bold 11px sans-serif'; ctx.fillText(t + '°C', fx + 28, 90);
+  });
+
+  roundRect(10, 108, 300, 92, 8, '#0e1612', '#285a37');
+  roundRect(18, 115, 46, 20, 5, '#40c860');
+  ctx.fillStyle = '#020f03'; ctx.font = 'bold 11px sans-serif'; ctx.fillText('VFR', 41, 129);
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
+  ctx.fillText('METAR LTAU (Kayseri Erkilet Airport)', 72, 129);
+  ctx.fillStyle = '#64dcff'; ctx.font = '11px sans-serif';
+  ctx.fillText('Rüzgar: VRB 1 kt • Görüş: 10+ km • QNH: 1017 hPa', 18, 150);
+  ctx.fillStyle = '#30ff60';
+  ctx.fillText('Sıcaklık: 23°C / İşba: 0°C • Bulut: CAVOK', 18, 168);
+  ctx.fillStyle = '#788ca0'; ctx.font = '9px monospace';
+  ctx.fillText('RAW: LTAU 241320Z AUTO VRB01KT CAVOK 23/00 Q1017 NOSIG', 18, 188);
+
+  roundRect(240, 206, 70, 26, 13, '#38a8ff');
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('RADAR', 275, 222);
+}
+
+function renderSettings() {
+  ctx.fillStyle = '#020f03'; ctx.fillRect(0, 0, 320, 240);
+  ctx.fillStyle = '#30ff60'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Ayarlar & Web Portal (Dokunmatik Seçim)', 160, 16);
+
+  const items = [
+    ['Dil / Language', 'Türkçe (7 Dil)'],
+    ['Harita Katmanı', mapStyles[mapStyle].name],
+    ['Birimler', 'Metrik (km / °C)'],
+    ['İrtifa Renkleri', colorByAlt ? 'tar1090 İrtifa' : 'Klasik Altın'],
+    ['Radar Üst HUD', 'Dark Frosted Pill'],
+    ['Ekran Çerçevesi', roundBezel ? 'Round 240x240' : 'Tam 320x240'],
+    ['Konum / Meydan', 'Kayseri (ASR/LTAU)'],
+    ['CYD Panel / BL', 'ILI9341 / %90']
+  ];
+  items.forEach(([k, v], i) => {
+    const tx = 10 + (i % 2) * 152;
+    const ty = 26 + ((i / 2) | 0) * 40;
+    roundRect(tx, ty, 146, 35, 6, '#0e1612', '#285a37');
+    ctx.fillStyle = '#788ca0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(k, tx + 8, ty + 13);
+    ctx.fillStyle = '#30ff60'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(v, tx + 8, ty + 28);
+  });
+
+  roundRect(10, 190, 224, 42, 6, '#0c1c12', '#30ff60');
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Web Portal: http://flightscnr.local', 18, 208);
+  ctx.fillStyle = '#64dcff'; ctx.font = '9px sans-serif';
+  ctx.fillText('Tarayıcıdan tüm ayarları ve API anahtarlarını yönetin', 18, 224);
+
+  roundRect(240, 196, 70, 30, 15, '#38a8ff');
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('RADAR', 275, 214);
+}
+
+cv.addEventListener('click', (ev) => {
+  const r = cv.getBoundingClientRect();
+  const x = (ev.clientX - r.left) * (320 / r.width);
+  const y = (ev.clientY - r.top) * (240 / r.height);
+
+  if (screen === 0) { setScr(1); return; }
+  if (screen === 1) {
+    if (!roundBezel && x < 45) {
+      if (y > 165 && y < 198) cycleMap();
+      else if (y >= 200) setScr(5);
+      return;
+    }
+    if (!roundBezel && x > 275) {
+      if (y < 40) setScr(2);
+      else if (y > 130 && y < 164) setScr(6);
+      else if (y >= 165 && y < 198) setScr(7);
+      else if (y >= 200) setScr(8);
+      return;
+    }
+    for (let i = 0; i < aircraft.length; i++) {
+      const dx = x - (aircraft[i]._sx || 0), dy = y - (aircraft[i]._sy || 0);
+      if (dx * dx + dy * dy < 20 * 20) { selectedIdx = i; setScr(2); return; }
+    }
+  } else if (screen === 2) {
+    if (y > 190) {
+      if (x < 102) selectedIdx = (selectedIdx - 1 + aircraft.length) % aircraft.length;
+      else if (x < 180) setScr(3);
+      else if (x < 252) selectedIdx = (selectedIdx + 1) % aircraft.length;
+      else setScr(1);
+    }
+  } else if (screen === 5) {
+    if (y < 42) flipMode = (flipMode + 1) % 3;
+    else if (y > 190 && x > 185) setScr(1);
+    else if (y >= 46 && y < 190) { selectedIdx = ((y - 46) / 24) | 0; setScr(2); }
+  } else if (screen === 6) {
+    if (y > 198 && x > 220) setScr(1);
+    else clockFace = (clockFace + 1) % 5;
+  } else {
+    if (y > 190 && x > 220) setScr(1);
+  }
+});
+
+function loop() {
+  sweepDeg = (performance.now() * 0.06) % 360;
+  if (screen === 0) renderDisclaimer();
+  else if (screen === 1) renderRadar();
+  else if (screen === 2) renderFlightDetail();
+  else if (screen === 3 || screen === 4) renderTracked();
+  else if (screen === 5) renderFlipBoard();
+  else if (screen === 6) renderClocks();
+  else if (screen === 7) renderForecastMetar();
+  else renderSettings();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
