@@ -265,16 +265,26 @@ th{color:var(--muted);}
     </div>
     <div class="row">
       <div>
+        <label>Otomatik Parlaklık (CYD LDR Sensörü)</label>
+        <select name="autoBrightness" id="autoBrightness">
+          <option value="1">Açık (Sensöre Göre 0-255 Otomatik)</option>
+          <option value="0">Kapalı (Manuel Sabit Parlaklık)</option>
+        </select>
+      </div>
+      <div>
+        <label>Ekran Parlaklığı (0-255)</label>
+        <input name="brightness" id="brightness" type="number" min="0" max="255">
+      </div>
+    </div>
+    <div class="row">
+      <div>
         <label>CYD Panel Renk Modu</label>
         <select name="invertDisplay" id="invertDisplay">
           <option value="0">Normal (ILI9341)</option>
           <option value="1">Ters Renk (Inverted)</option>
         </select>
       </div>
-      <div>
-        <label>Ekran Parlaklığı (15-255)</label>
-        <input name="brightness" id="brightness" type="number" min="15" max="255">
-      </div>
+      <div></div>
     </div>
     <div class="row">
       <div><label>Wi-Fi Ağı (SSID)</label><input name="wifiSsid" id="wifiSsid" maxlength="32"></div>
@@ -297,7 +307,7 @@ th{color:var(--muted);}
 </div>
 
 <script>
-const FORM_KEYS = ['locationName','centerLat','centerLon','homeAirportIcao','homeAirportIata','radarRangeKm','trackedCallsign','showSweepBeam','showRadarRings','mapStyle','language','hudStyle','clockFace','colorByAltitude','autoCycleScreens','screenRotation','roundBezelMask','showAirportLayer','showPrecipLayer','showTagLeaders','metricUnits','invertDisplay','brightness','wifiSsid','dataSource'];
+const FORM_KEYS = ['locationName','centerLat','centerLon','homeAirportIcao','homeAirportIata','radarRangeKm','trackedCallsign','showSweepBeam','showRadarRings','mapStyle','language','hudStyle','clockFace','colorByAltitude','autoCycleScreens','screenRotation','roundBezelMask','showAirportLayer','showPrecipLayer','showTagLeaders','metricUnits','invertDisplay','autoBrightness','brightness','wifiSsid','dataSource'];
 
 async function loadStatus(){
   try{
@@ -388,7 +398,9 @@ static void handleStatus() {
         doc["wifiSsid"] = g_cfg.wifiSsid;
         doc["dataSource"] = g_cfg.dataSource;
         doc["invertDisplay"] = g_cfg.invertDisplay;
-        doc["brightness"] = g_cfg.brightness;
+        doc["autoBrightness"] = g_cfg.autoBrightness;
+        doc["brightness"] = getLiveBacklightPwm();
+        doc["ldrRaw"] = getLiveLdrRaw();
         doc["aircraftCount"] = g_aircraftCount;
         doc["freeHeap"] = ESP.getFreeHeap();
         doc["tempC"] = g_weather.tempC;
@@ -456,9 +468,14 @@ static void handleSave() {
             g_cfg.invertDisplay = inv;
             applyDisplayInversion(inv);
         }
+        if (s_server.hasArg("autoBrightness")) {
+            g_cfg.autoBrightness = (s_server.arg("autoBrightness").toInt() != 0);
+        }
         if (s_server.hasArg("brightness")) {
-            g_cfg.brightness = (uint8_t)constrain(s_server.arg("brightness").toInt(), 15, 255);
-            applyBacklightBrightness(g_cfg.brightness);
+            g_cfg.brightness = (uint8_t)constrain(s_server.arg("brightness").toInt(), 0, 255);
+            if (!g_cfg.autoBrightness) {
+                applyBacklightBrightness(g_cfg.brightness);
+            }
         }
         xSemaphoreGive(g_stateMutex);
     }

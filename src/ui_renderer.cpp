@@ -1599,8 +1599,10 @@ static void renderSettingsScreen(StripCtx& ctx) {
     tiles[6].label = tr(TR_SET_LOCATION);
     snprintf(tiles[6].value, sizeof(tiles[6].value), "%s (%s)", g_cfg.locationName, g_cfg.homeAirportIata);
 
-    tiles[7].label = isTr ? "Ters Renk / Isik" : "CYD Invert / BL";
-    snprintf(tiles[7].value, sizeof(tiles[7].value), "%s / %d%%", g_cfg.invertDisplay ? "TERS" : "NORM", (g_cfg.brightness * 100) / 255);
+    tiles[7].label = isTr ? "Parlaklik (LDR 0-255)" : "Auto BL (LDR 0-255)";
+    snprintf(tiles[7].value, sizeof(tiles[7].value), "%s: %u/255",
+        g_cfg.autoBrightness ? (isTr ? "OTO" : "AUTO") : (isTr ? "SABiT" : "MAN"),
+        (unsigned)getLiveBacklightPwm());
 
     for (int i = 0; i < 8; i++) {
         int col = i % 2;
@@ -1628,8 +1630,55 @@ static void renderSettingsScreen(StripCtx& ctx) {
 // ============================================================================
 // Main UI Initialization & Frame Loop
 // ============================================================================
+static float s_smoothedLdr = 200.0f;
+static float s_smoothedPwm = 230.0f;
+static uint16_t s_lastLdrRaw = 200;
+static uint8_t s_appliedPwm = 230;
+static uint32_t s_lastLdrSampleMs = 0;
+
 void applyBacklightBrightness(uint8_t level) {
+    s_appliedPwm = level;
+    s_smoothedPwm = (float)level;
     ledcWrite(BL_LEDC_CHANNEL, level);
+}
+
+uint8_t getLiveBacklightPwm() {
+    return s_appliedPwm;
+}
+
+uint16_t getLiveLdrRaw() {
+    return s_lastLdrRaw;
+}
+
+static void updateAutoBacklight(uint32_t now) {
+    if (!g_cfg.autoBrightness) {
+        if (s_appliedPwm != g_cfg.brightness) {
+            s_appliedPwm = g_cfg.brightness;
+            ledcWrite(BL_LEDC_CHANNEL, s_appliedPwm);
+        }
+        return;
+    }
+    if (now - s_lastLdrSampleMs < 80) return; // Sample CYD onboard LDR (GPIO 34) at 12.5 Hz
+    s_lastLdrSampleMs = now;
+
+    uint16_t raw = analogRead(PIN_LDR); // 0 = bright ambient light, ~1800-4095 = darkness
+    s_lastLdrRaw = raw;
+    s_smoothedLdr = s_smoothedLdr * 0.80f + (float)raw * 0.20f;
+
+    // Map smoothed LDR reading to 0..255 PWM brightness
+    float norm = (s_smoothedLdr - 25.0f) / (1800.0f - 25.0f);
+    if (norm < 0.0f) norm = 0.0f;
+    if (norm > 1.0f) norm = 1.0f;
+
+    float targetPwm = (1.0f - norm) * 255.0f;
+    s_smoothedPwm = s_smoothedPwm * 0.78f + targetPwm * 0.22f;
+
+    uint8_t pwm = (uint8_t)constrain((int)roundf(s_smoothedPwm), 0, 255);
+    g_cfg.brightness = pwm;
+    if (pwm != s_appliedPwm) {
+        s_appliedPwm = pwm;
+        ledcWrite(BL_LEDC_CHANNEL, s_appliedPwm);
+    }
 }
 
 void applyDisplayInversion(bool invert) {
@@ -1645,6 +1694,13 @@ void initUiRenderer() {
     s_appliedRotation = g_cfg.screenRotation;
     s_tft.invertDisplay(g_cfg.invertDisplay);
     s_tft.fillScreen(TFT_BLACK);
+
+    // Configure CYD onboard LDR light sensor on GPIO 34 (ADC1_CH6)
+    pinMode(PIN_LDR, INPUT);
+    analogReadResolution(12);
+    analogSetPinAttenuation(PIN_LDR, ADC_11db);
+    s_lastLdrRaw = analogRead(PIN_LDR);
+    s_smoothedLdr = (float)s_lastLdrRaw;
 
     // Configure PWM Backlight on GPIO 21 AFTER s_tft.init() so pinMode isn't overwritten
     ledcSetup(BL_LEDC_CHANNEL, 5000, 8);
@@ -1677,6 +1733,9 @@ void tickAndRenderUi() {
         s_tft.setRotation(g_cfg.screenRotation);
         s_appliedRotation = g_cfg.screenRotation;
     }
+
+    // Automatically adjust 0..255 backlight PWM from CYD onboard LDR sensor (GPIO 34)
+    updateAutoBacklight(now);
 
     // Hands-Free Kiosk Auto-Cycle Mode (if enabled from Web Portal)
     if (g_cfg.autoCycleScreens && s_currentScreen != SCREEN_DISCLAIMER) {
@@ -2007,8 +2066,11 @@ static void onTapEvent(int16_t x, int16_t y) {
                     break;
                 }
                 case 7:
-                    g_cfg.invertDisplay = !g_cfg.invertDisplay;
-                    applyDisplayInversion(g_cfg.invertDisplay);
+                    g_cfg.autoBrightness = !g_cfg.autoBrightness;
+                    if (!g_cfg.autoBrightness) {
+                        g_cfg.brightness = 230;
+                        applyBacklightBrightness(g_cfg.brightness);
+                    }
                     break;
             }
             saveConfigToNVS();

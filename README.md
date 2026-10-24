@@ -87,7 +87,7 @@ Bu proje **ESP32-2432S028R (2.8 inç 320×240 TFT LCD "Cheap Yellow Display" - C
 | **TFT Arka Işık (Backlight)** | `GPIO 21` | PWM parlaklık kontrolü (`LEDC Kanal 0`) |
 | **Dokunmatik (XPT2046 Touch)** | `CLK=25`, `MOSI=32`, `MISO=39`, `CS=33`, `IRQ=36` | Özel bit-bang SPI okuyucu (`readCydTouch`) |
 | **RGB Bildirim LED'i** | `R=4`, `G=16`, `B=17` | Aktif-Düşük (Active-Low) |
-| **LDR Işık Sensörü** | `GPIO 34` | Ortam ışığı okuma |
+| **LDR Işık Sensörü** | `GPIO 34` | Ortam ışığına göre `0–255` arası otomatik ekran parlaklığı (PWM) |
 | **Dahili Hoparlör / Amfi** | `GPIO 26` | Radar uyarı tonları |
 
 ---

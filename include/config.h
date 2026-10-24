@@ -266,8 +266,9 @@ struct AppConfig {
     bool autoCycleScreens;      // true = hands-free Kiosk mode (cycles Radar & Flight Detail)
     bool roundBezelMask;        // false = full 320x240 widescreen cockpit, true = pure 240x240 round bezel
     bool invertDisplay;         // toggleable for CYD V1 vs V2/V3 panels
+    bool autoBrightness;        // true = automatic 0..255 backlight via CYD LDR sensor (GPIO 34)
     uint8_t screenRotation;     // 1 or 3 (landscape)
-    uint8_t brightness;         // 10..255
+    uint8_t brightness;         // 0..255
     uint8_t mapStyle;           // MapStyleId
     uint8_t hudStyle;           // HudStyleId
     uint8_t clockFace;          // ClockFaceId

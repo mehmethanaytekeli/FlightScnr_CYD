@@ -16,6 +16,8 @@
 
 void initUiRenderer();
 void applyBacklightBrightness(uint8_t level);
+uint8_t getLiveBacklightPwm();
+uint16_t getLiveLdrRaw();
 void applyDisplayInversion(bool invert);
 void tickAndRenderUi();
 void handleTouchInput(int16_t tx, int16_t ty, bool pressed);

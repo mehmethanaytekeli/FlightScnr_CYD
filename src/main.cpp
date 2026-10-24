@@ -171,6 +171,7 @@ void loadConfigFromNVS() {
     g_cfg.autoCycleScreens    = s_prefs.getBool("kiosk", false);
     g_cfg.roundBezelMask      = s_prefs.getBool("bezel", false);
     g_cfg.invertDisplay       = s_prefs.getBool("inv", false);
+    g_cfg.autoBrightness      = s_prefs.getBool("autoBl", true);
     g_cfg.screenRotation      = s_prefs.getUChar("rot", 1);
     g_cfg.brightness          = s_prefs.getUChar("bl", 230);
     g_cfg.mapStyle            = s_prefs.getUChar("map", MAP_STYLE_CARTO_DARK);
@@ -283,6 +284,7 @@ void saveConfigToNVS() {
     s_prefs.putBool("kiosk",  g_cfg.autoCycleScreens);
     s_prefs.putBool("bezel",  g_cfg.roundBezelMask);
     s_prefs.putBool("inv",    g_cfg.invertDisplay);
+    s_prefs.putBool("autoBl", g_cfg.autoBrightness);
     s_prefs.putUChar("rot",   g_cfg.screenRotation);
     s_prefs.putUChar("bl",    g_cfg.brightness);
     s_prefs.putUChar("map",   g_cfg.mapStyle);
