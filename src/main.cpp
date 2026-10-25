@@ -91,7 +91,7 @@ static int16_t bestTwoAvg(int16_t x, int16_t y, int16_t z) {
     return (y + z) >> 1;
 }
 
-static bool readCydTouch(int16_t& sx, int16_t& sy) {
+static bool readCydTouchRawOnce(int16_t& sx, int16_t& sy) {
     // Re-assert digital input on GPIO 39 (SENSOR_VN) in case Wi-Fi/ADC touched RTC pads
     pinMode(PIN_TOUCH_MISO, INPUT);
     digitalWrite(PIN_TOUCH_CS, LOW);
@@ -101,7 +101,7 @@ static bool readCydTouch(int16_t& sx, int16_t& sy) {
     int16_t z2 = (xptTransfer16(0x91 /* X */)  >> 3) & 0x0FFF;
     int16_t z = z1 + 4095 - z2;
 
-    if (z < 180 || z1 < 35) {
+    if (z < 350 || z1 < 120 || z2 > 3950) {
         xptTransfer16(0xD0);
         xptTransfer16(0x00);
         digitalWrite(PIN_TOUCH_CS, HIGH);
@@ -118,9 +118,18 @@ static bool readCydTouch(int16_t& sx, int16_t& sy) {
     data[5] = (xptTransfer16(0x00) >> 3) & 0x0FFF;
     digitalWrite(PIN_TOUCH_CS, HIGH);
 
+    // Reject EMI / Wi-Fi / ADC spikes where consecutive samples diverge
+    int16_t minX = min(data[0], min(data[2], data[4]));
+    int16_t maxX = max(data[0], max(data[2], data[4]));
+    int16_t minY = min(data[1], min(data[3], data[5]));
+    int16_t maxY = max(data[1], max(data[3], data[5]));
+    if ((maxX - minX) > 65 || (maxY - minY) > 65) {
+        return false;
+    }
+
     int16_t rawX = bestTwoAvg(data[0], data[2], data[4]);
     int16_t rawY = bestTwoAvg(data[1], data[3], data[5]);
-    if (rawX <= 50 || rawX >= 4040 || rawY <= 50 || rawY >= 4040) {
+    if (rawX <= 180 || rawX >= 3900 || rawY <= 200 || rawY >= 3900) {
         return false;
     }
 
@@ -132,7 +141,37 @@ static bool readCydTouch(int16_t& sx, int16_t& sy) {
     }
     sx = constrain(map(rx, TOUCH_RAW_X_MIN, TOUCH_RAW_X_MAX, 0, CYD_SCREEN_W - 1), 0, CYD_SCREEN_W - 1);
     sy = constrain(map(ry, TOUCH_RAW_Y_MIN, TOUCH_RAW_Y_MAX, 0, CYD_SCREEN_H - 1), 0, CYD_SCREEN_H - 1);
-    Serial.printf("[TOUCH] raw=(%d,%d,z=%d) -> (%d,%d)\n", rawX, rawY, z, sx, sy);
+    return true;
+}
+
+// Multi-frame debounce filter: requires 3 consecutive consistent frames to prevent phantom touches
+static bool readCydTouch(int16_t& sx, int16_t& sy) {
+    static uint8_t s_stableCount = 0;
+    static int16_t s_lastX = 0;
+    static int16_t s_lastY = 0;
+
+    int16_t curX = 0, curY = 0;
+    if (!readCydTouchRawOnce(curX, curY)) {
+        s_stableCount = 0;
+        return false;
+    }
+
+    if (s_stableCount > 0 && (abs(curX - s_lastX) > 22 || abs(curY - s_lastY) > 22)) {
+        s_stableCount = 1;
+        s_lastX = curX;
+        s_lastY = curY;
+        return false;
+    }
+
+    s_lastX = curX;
+    s_lastY = curY;
+    if (s_stableCount < 10) s_stableCount++;
+
+    if (s_stableCount < 3) {
+        return false;
+    }
+    sx = curX;
+    sy = curY;
     return true;
 }
 
@@ -337,16 +376,22 @@ void loop() {
     bool touched = readCydTouch(sx, sy);
     handleTouchInput(sx, sy, touched);
 
-    // Allow physical BOOT button (GPIO 0) to cycle screens too
-    static bool s_prevBootBtn = true;
-    bool curBootBtn = digitalRead(PIN_BOOT_BTN);
-    if (!curBootBtn && s_prevBootBtn) {
-        ScreenId cur = getCurrentScreen();
-        if (cur == SCREEN_DISCLAIMER) setCurrentScreen(SCREEN_RADAR);
-        else setCurrentScreen((ScreenId)((((int)cur) % 8) + 1));
-        playFlapClick();
+    // Allow physical BOOT button (GPIO 0) to cycle screens (debounced over 5 consecutive frames)
+    static uint8_t s_bootLowFrames = 0;
+    static bool s_bootTriggered = false;
+    if (digitalRead(PIN_BOOT_BTN) == LOW) {
+        if (s_bootLowFrames < 20) s_bootLowFrames++;
+        if (s_bootLowFrames >= 5 && !s_bootTriggered) {
+            s_bootTriggered = true;
+            ScreenId cur = getCurrentScreen();
+            if (cur == SCREEN_DISCLAIMER) setCurrentScreen(SCREEN_RADAR);
+            else setCurrentScreen((ScreenId)((((int)cur) % 8) + 1));
+            playFlapClick();
+        }
+    } else {
+        s_bootLowFrames = 0;
+        s_bootTriggered = false;
     }
-    s_prevBootBtn = curBootBtn;
 
     // 2. Render 30+ FPS Strip-Buffered UI
     tickAndRenderUi();

@@ -2096,36 +2096,10 @@ void handleTouchInput(int16_t tx, int16_t ty, bool pressed) {
         int16_t dy = s_touchLastY - s_touchStartY;
         uint32_t dur = millis() - s_touchDownMs;
 
-        // Gesture Navigation (Swipe Left/Right/Up/Down matching FlightScnr_Pi README!)
-        if (s_currentScreen != SCREEN_DISCLAIMER && dur < 900 && (abs(dx) > 48 || abs(dy) > 48)) {
-            if (abs(dx) > abs(dy)) {
-                if (dx < -48) {
-                    // Swipe Left: Radar -> Arrivals Split-Flap Board -> Clocks -> Forecast/METAR -> Settings
-                    if (s_currentScreen == SCREEN_RADAR) s_currentScreen = SCREEN_FLIP_BOARD;
-                    else if (s_currentScreen == SCREEN_FLIP_BOARD) s_currentScreen = SCREEN_CLOCK;
-                    else if (s_currentScreen == SCREEN_CLOCK) s_currentScreen = SCREEN_FORECAST_METAR;
-                    else if (s_currentScreen == SCREEN_FORECAST_METAR) s_currentScreen = SCREEN_SETTINGS;
-                    else s_currentScreen = SCREEN_RADAR;
-                } else {
-                    // Swipe Right: Radar -> Tracked Flight -> Flight Detail
-                    if (s_currentScreen == SCREEN_RADAR) s_currentScreen = SCREEN_TRACKED;
-                    else if (s_currentScreen == SCREEN_TRACKED) s_currentScreen = SCREEN_FLIGHT_DETAIL;
-                    else s_currentScreen = SCREEN_RADAR;
-                }
-            } else {
-                if (dy < -48) {
-                    // Swipe Up returns to Radar Home
-                    s_currentScreen = SCREEN_RADAR;
-                } else {
-                    // Swipe Down opens Clock / Weather
-                    s_currentScreen = (s_currentScreen == SCREEN_CLOCK) ? SCREEN_FORECAST_METAR : SCREEN_CLOCK;
-                }
-            }
-            playFlapClick();
-            return;
+        // Ignore transient glitches or accidental drags so Radar mode stays open indefinitely
+        if (dur >= 50 && dur <= 1200 && abs(dx) <= 28 && abs(dy) <= 28) {
+            onTapEvent(s_touchLastX, s_touchLastY);
         }
-
-        onTapEvent(s_touchLastX, s_touchLastY);
     }
 }
 
