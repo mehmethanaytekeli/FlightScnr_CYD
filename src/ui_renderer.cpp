@@ -664,7 +664,7 @@ static void renderRadarScreen(StripCtx& ctx) {
     }
 
     // 9. Frosted Radar Clock HUD Pill at Top (radar_hud.py port)
-    if (g_cfg.hudStyle != HUD_STYLE_OFF && ctx.overlaps(4, 32)) {
+    if (g_cfg.uiOverlayMode != OVERLAY_ALL_OFF && g_cfg.hudStyle != HUD_STYLE_OFF && ctx.overlaps(4, 32)) {
         bool lightHud = (g_cfg.hudStyle == HUD_STYLE_LIGHT);
         uint16_t pillCol = lightHud ? Theme::PILL_LIGHT : Theme::PILL_DARK;
         uint16_t txtCol  = lightHud ? Theme::TAG_TEXT_LIGHT : Theme::LABEL;
@@ -694,8 +694,8 @@ static void renderRadarScreen(StripCtx& ctx) {
         ctx.drawText(g_cfg.homeAirportIata, 243, 10, 1, s_favPopoverOpen ? Theme::BG : Theme::SWEEP, TC_DATUM);
     }
 
-    // 10. Widescreen 320x240 Cockpit Side Controls (when roundBezelMask == false)
-    if (!g_cfg.roundBezelMask) {
+    // 10. Widescreen 320x240 Cockpit Side Controls (when uiOverlayMode == OVERLAY_ALL_OPEN)
+    if (g_cfg.uiOverlayMode == OVERLAY_ALL_OPEN && !g_cfg.roundBezelMask) {
         // Left dock: Zoom +, Zoom -, Sweep/Ring Mode (TRM), Map Style (HAR), Split-Flap Board (PANO)
         ctx.fillAlphaRoundRect(3, 6,  38, 26, 6, Theme::CARD_BG, 210);
         ctx.drawRoundRect(3, 6,  38, 26, 6, Theme::CARD_EDGE);
@@ -737,13 +737,13 @@ static void renderRadarScreen(StripCtx& ctx) {
         ctx.fillAlphaRoundRect(277, 202, 40, 28, 6, Theme::CARD_BG, 210);
         ctx.drawRoundRect(277, 202, 40, 28, 6, Theme::CARD_EDGE);
         ctx.drawText("AYAR", 297, 212, 1, Theme::MUTED, MC_DATUM);
-    }
 
-    // Subtle bottom watermark showing Web Portal IP for hands-free setup
-    if (ctx.overlaps(228, 240)) {
-        char ipFooter[48];
-        snprintf(ipFooter, sizeof(ipFooter), "Web Portal: http://%s", getDeviceIpString().c_str());
-        ctx.drawText(ipFooter, 160, 231, 1, Theme::HINT, TC_DATUM);
+        // Subtle bottom watermark showing Web Portal IP (hidden when buttons are off!)
+        if (ctx.overlaps(228, 240)) {
+            char ipFooter[48];
+            snprintf(ipFooter, sizeof(ipFooter), "Web Portal: http://%s", getDeviceIpString().c_str());
+            ctx.drawText(ipFooter, 160, 231, 1, Theme::HINT, TC_DATUM);
+        }
     }
 
     // 11. Interactive HUD Volume Popover (if open)
@@ -1584,8 +1584,10 @@ static void renderSettingsScreen(StripCtx& ctx) {
     tiles[3].label = tr(TR_SET_ALT_COLOR);
     strlcpy(tiles[3].value, g_cfg.colorByAltitude ? (isTr ? "Irtifa Rengi" : "tar1090 Alt") : (isTr ? "Klasik Sari" : "Classic Gold"), sizeof(tiles[3].value));
 
-    tiles[4].label = tr(TR_SET_HUD_STYLE);
-    strlcpy(tiles[4].value, kHudNames[g_cfg.hudStyle % 3], sizeof(tiles[4].value));
+    tiles[4].label = isTr ? "Tuslar & Ust HUD" : "Buttons & HUD";
+    static const char* const kOvNamesTr[3] = { "Tuslar Acik", "Sadece HUD", "Hepsi Kapali" };
+    static const char* const kOvNamesEn[3] = { "Buttons+HUD", "HUD Only", "All Hidden" };
+    strlcpy(tiles[4].value, isTr ? kOvNamesTr[g_cfg.uiOverlayMode % 3] : kOvNamesEn[g_cfg.uiOverlayMode % 3], sizeof(tiles[4].value));
 
     tiles[5].label = isTr ? "Radar / Harita Modu" : tr(TR_SET_BEZEL_MODE);
     if (!g_cfg.showRadarRings) {
@@ -1867,7 +1869,7 @@ static void onTapEvent(int16_t x, int16_t y) {
         }
 
         // 3. Top Frosted HUD Bar hits
-        if (g_cfg.hudStyle != HUD_STYLE_OFF && y >= 4 && y <= 32 && x >= 58 && x <= 262) {
+        if (g_cfg.uiOverlayMode != OVERLAY_ALL_OFF && g_cfg.hudStyle != HUD_STYLE_OFF && y >= 4 && y <= 32 && x >= 58 && x <= 262) {
             if (x >= 198 && x <= 228) {
                 s_volumePopoverOpen = !s_volumePopoverOpen;
                 s_favPopoverOpen = false;
@@ -1881,8 +1883,8 @@ static void onTapEvent(int16_t x, int16_t y) {
             return;
         }
 
-        // 4. Widescreen Cockpit Left/Right Dock Buttons
-        if (!g_cfg.roundBezelMask) {
+        // 4. Widescreen Cockpit Left/Right Dock Buttons (only active when buttons are visible!)
+        if (g_cfg.uiOverlayMode == OVERLAY_ALL_OPEN && !g_cfg.roundBezelMask) {
             if (x <= 46) {
                 if (y >= 6 && y <= 38) {
                     g_cfg.radarRangeKm = max(15.0f, g_cfg.radarRangeKm * 0.7f);
@@ -2057,7 +2059,10 @@ static void onTapEvent(int16_t x, int16_t y) {
                 case 1: g_cfg.mapStyle = (g_cfg.mapStyle + 1) % MAP_STYLE_COUNT; break;
                 case 2: g_cfg.metricUnits = !g_cfg.metricUnits; break;
                 case 3: g_cfg.colorByAltitude = !g_cfg.colorByAltitude; break;
-                case 4: g_cfg.hudStyle = (g_cfg.hudStyle + 1) % 3; break;
+                case 4:
+                    g_cfg.uiOverlayMode = (g_cfg.uiOverlayMode + 1) % 3;
+                    if (g_cfg.uiOverlayMode != OVERLAY_ALL_OPEN) g_cfg.roundBezelMask = false;
+                    break;
                 case 5: cycleRadarSweepAndRectMode(); break;
                 case 6: {
                     static int s_favCycle = 0;

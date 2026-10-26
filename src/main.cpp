@@ -215,6 +215,7 @@ void loadConfigFromNVS() {
     g_cfg.brightness          = s_prefs.getUChar("bl", 230);
     g_cfg.mapStyle            = s_prefs.getUChar("map", MAP_STYLE_CARTO_DARK);
     g_cfg.hudStyle            = s_prefs.getUChar("hud", HUD_STYLE_DARK);
+    g_cfg.uiOverlayMode       = s_prefs.getUChar("ovMode", OVERLAY_ALL_OPEN);
     g_cfg.clockFace           = s_prefs.getUChar("clk", CLOCK_FACE_DIGITAL);
     g_cfg.language            = s_prefs.getUChar("lang", LANG_TR);
     g_cfg.dataSource          = s_prefs.getUChar("src", SOURCE_FR24_AND_ADSBFI);
@@ -328,6 +329,7 @@ void saveConfigToNVS() {
     s_prefs.putUChar("bl",    g_cfg.brightness);
     s_prefs.putUChar("map",   g_cfg.mapStyle);
     s_prefs.putUChar("hud",   g_cfg.hudStyle);
+    s_prefs.putUChar("ovMode",g_cfg.uiOverlayMode);
     s_prefs.putUChar("clk",   g_cfg.clockFace);
     s_prefs.putUChar("lang",  g_cfg.language);
     s_prefs.putUChar("src",   g_cfg.dataSource);

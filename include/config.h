@@ -109,6 +109,12 @@ enum HudStyleId : uint8_t {
     HUD_STYLE_OFF = 2
 };
 
+enum UiOverlayModeId : uint8_t {
+    OVERLAY_ALL_OPEN = 0,   // Tuşlar Açık (Yan tuşlar + Üst HUD açık)
+    OVERLAY_HUD_ONLY = 1,   // Sadece HUD Açık (Yan tuşlar kapalı)
+    OVERLAY_ALL_OFF  = 2    // Hepsi Kapalı (Tam ekran sadece harita ve uçaklar)
+};
+
 enum DataSourceId : uint8_t {
     SOURCE_FR24_AND_ADSBFI = 0,
     SOURCE_FR24_ONLY = 1,
@@ -271,6 +277,7 @@ struct AppConfig {
     uint8_t brightness;         // 0..255
     uint8_t mapStyle;           // MapStyleId
     uint8_t hudStyle;           // HudStyleId
+    uint8_t uiOverlayMode;      // UiOverlayModeId (0=Tuşlar Açık, 1=Sadece HUD Açık, 2=Hepsi Kapalı)
     uint8_t clockFace;          // ClockFaceId
     uint8_t language;           // LangId
     uint8_t dataSource;         // DataSourceId

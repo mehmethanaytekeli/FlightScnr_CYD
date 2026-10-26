@@ -76,6 +76,12 @@ th{color:var(--muted);}
     <button type="button" class="btn btn-sec" onclick="setScr(7)">🌦️ 5 Günlük Hava & METAR</button>
     <button type="button" class="btn btn-sec" onclick="setScr(8)">⚙️ Ayarlar Ekranı</button>
   </div>
+  <label>Ekran Tuşları & HUD Görünümü (Tam Ekran Uçak İzleme Modu):</label>
+  <div style="margin-bottom:8px">
+    <button type="button" class="btn btn-sec" id="btnOv0" onclick="quickAct('ov_all')">🎛️ Tuşlar Açık (Tuşlar + HUD)</button>
+    <button type="button" class="btn btn-sec" id="btnOv1" onclick="quickAct('ov_hud')">📊 Sadece HUD Açık (Yan Tuşlar Kapalı)</button>
+    <button type="button" class="btn btn-sec btn-amber" id="btnOv2" onclick="quickAct('ov_off')">🖥️ Hepsi Kapalı (Tam Dikdörtgen Ekran Uçaklar)</button>
+  </div>
   <label>Hızlı Görünüm, Tarama, Dikdörtgen Harita & Zoom Kontrolleri:</label>
   <div>
     <button type="button" class="btn btn-sec btn-cyan" onclick="quickAct('zoom_in')">➕ Yakınlaştır (Zoom +)</button>
@@ -177,13 +183,23 @@ th{color:var(--muted);}
     </div>
     <div class="row">
       <div>
-        <label>Üst Bilgi Barı (HUD)</label>
+        <label>Ekran Tuşları & HUD Görünümü</label>
+        <select name="uiOverlayMode" id="uiOverlayMode">
+          <option value="0">Tuşlar Açık (Yan Tuşlar + Üst HUD Açık)</option>
+          <option value="1">Sadece HUD Açık (Yan Tuşlar Kapalı)</option>
+          <option value="2">Hepsi Kapalı (Tüm Dikdörtgen Ekranda Sadece Uçaklar)</option>
+        </select>
+      </div>
+      <div>
+        <label>Üst Bilgi Barı (HUD) Rengi</label>
         <select name="hudStyle" id="hudStyle">
           <option value="0">Koyu Yarı-Saydam Bar</option>
           <option value="1">Açık Bar</option>
           <option value="2">Kapalı (Tam Harita Alanı)</option>
         </select>
       </div>
+    </div>
+    <div class="row">
       <div>
         <label>Saat Kadranı Stili</label>
         <select name="clockFace" id="clockFace">
@@ -194,6 +210,7 @@ th{color:var(--muted);}
           <option value="4">Ay Evresi & Gökyüzü</option>
         </select>
       </div>
+      <div></div>
     </div>
     <div class="row">
       <div>
@@ -307,7 +324,7 @@ th{color:var(--muted);}
 </div>
 
 <script>
-const FORM_KEYS = ['locationName','centerLat','centerLon','homeAirportIcao','homeAirportIata','radarRangeKm','trackedCallsign','showSweepBeam','showRadarRings','mapStyle','language','hudStyle','clockFace','colorByAltitude','autoCycleScreens','screenRotation','roundBezelMask','showAirportLayer','showPrecipLayer','showTagLeaders','metricUnits','invertDisplay','autoBrightness','brightness','wifiSsid','dataSource'];
+const FORM_KEYS = ['locationName','centerLat','centerLon','homeAirportIcao','homeAirportIata','radarRangeKm','trackedCallsign','showSweepBeam','showRadarRings','mapStyle','language','uiOverlayMode','hudStyle','clockFace','colorByAltitude','autoCycleScreens','screenRotation','roundBezelMask','showAirportLayer','showPrecipLayer','showTagLeaders','metricUnits','invertDisplay','autoBrightness','brightness','wifiSsid','dataSource'];
 
 async function loadStatus(){
   try{
@@ -318,6 +335,10 @@ async function loadStatus(){
     document.getElementById('btnSweep').textContent = d.showSweepBeam ? '🔄 Tarama: AÇIK (Kapat)' : '🔄 Tarama: KAPALI (Aç)';
     document.getElementById('btnRect').textContent = (!d.showRadarRings) ? '🗺️ Mod: Tam Dikdörtgen Harita (Yuvarlağa Geç)' : '🗺️ Mod: Yuvarlak Radar (Tam Dikdörtgen Haritaya Geç)';
     document.getElementById('btnKiosk').textContent = d.autoCycleScreens ? '📺 Kiosk Oto-Döngü: AÇIK' : '📺 Kiosk Oto-Döngü: KAPALI';
+    ['btnOv0','btnOv1','btnOv2'].forEach((id,i)=>{
+      const b = document.getElementById(id);
+      if(b) b.classList.toggle('active', d.uiOverlayMode === i);
+    });
 
     if(!window._loadedForm){
       window._loadedForm = true;
@@ -383,6 +404,7 @@ static void handleStatus() {
         doc["trackedCallsign"] = g_cfg.trackedCallsign;
         doc["language"] = g_cfg.language;
         doc["mapStyle"] = g_cfg.mapStyle;
+        doc["uiOverlayMode"] = g_cfg.uiOverlayMode;
         doc["hudStyle"] = g_cfg.hudStyle;
         doc["clockFace"] = g_cfg.clockFace;
         doc["colorByAltitude"] = g_cfg.colorByAltitude;
@@ -438,6 +460,10 @@ static void handleSave() {
         if (s_server.hasArg("trackedCallsign")) strlcpy(g_cfg.trackedCallsign, s_server.arg("trackedCallsign").c_str(), sizeof(g_cfg.trackedCallsign));
         if (s_server.hasArg("language")) g_cfg.language = (uint8_t)s_server.arg("language").toInt();
         if (s_server.hasArg("mapStyle")) g_cfg.mapStyle = (uint8_t)s_server.arg("mapStyle").toInt();
+        if (s_server.hasArg("uiOverlayMode")) {
+            g_cfg.uiOverlayMode = (uint8_t)constrain(s_server.arg("uiOverlayMode").toInt(), 0, 2);
+            if (g_cfg.uiOverlayMode != OVERLAY_ALL_OPEN) g_cfg.roundBezelMask = false;
+        }
         if (s_server.hasArg("hudStyle")) g_cfg.hudStyle = (uint8_t)s_server.arg("hudStyle").toInt();
         if (s_server.hasArg("clockFace")) g_cfg.clockFace = (uint8_t)s_server.arg("clockFace").toInt();
         if (s_server.hasArg("colorByAltitude")) g_cfg.colorByAltitude = (s_server.arg("colorByAltitude").toInt() != 0);
@@ -519,6 +545,17 @@ static void handleQuickAction() {
                 g_cfg.roundBezelMask = false;
                 if (g_cfg.mapStyle == MAP_STYLE_DARK_FLAT) g_cfg.mapStyle = MAP_STYLE_CARTO_DARK;
             }
+            setCurrentScreen(SCREEN_RADAR);
+        } else if (act == "ov_all") {
+            g_cfg.uiOverlayMode = OVERLAY_ALL_OPEN;
+            setCurrentScreen(SCREEN_RADAR);
+        } else if (act == "ov_hud") {
+            g_cfg.uiOverlayMode = OVERLAY_HUD_ONLY;
+            g_cfg.roundBezelMask = false;
+            setCurrentScreen(SCREEN_RADAR);
+        } else if (act == "ov_off") {
+            g_cfg.uiOverlayMode = OVERLAY_ALL_OFF;
+            g_cfg.roundBezelMask = false;
             setCurrentScreen(SCREEN_RADAR);
         } else if (act == "cycle_map") {
             g_cfg.mapStyle = (g_cfg.mapStyle + 1) % MAP_STYLE_COUNT;
